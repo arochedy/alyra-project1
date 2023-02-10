@@ -7,17 +7,17 @@ contract("VotingContract", (accounts) => {
   beforeEach(async () => {
     contractInstance = await VotingContract.new();
   });
-  it("whitelist alice", async () => {
-    let result = await contractInstance.whitelist(alice);
-
+  
+  it("whitelist bob", async () => {
+    let result = await contractInstance.whitelist(bob);
 
     truffleAssert.eventEmitted(result, "VoterRegistered", (ev) => {
-      return ev.voterAddress == alice;
+      return ev.voterAddress == bob;
     });
 
     await truffleAssert.reverts(
-      contractInstance.addProposal("test proposal"),
-      "Not ProposalsRegistrationStarted period"
+      contractInstance.addProposal("test proposal", { from: bob }),
+      "Not the time for add proposals",
     );
 
   });
@@ -66,12 +66,12 @@ contract("VotingContract", (accounts) => {
 
     await contractInstance.tailVotes();
 
-    let winner = await contractInstance.getWinner();
+    let winner = await contractInstance.getWinner({ from: bob });
     console.log(winner);
     assert.equal(winner.description, "test 2");
     assert.equal(winner.voteCount, 1);
 
-    let results = await contractInstance.getProposals({from : bob});
+    let results = await contractInstance.getProposals({ from: bob });
     console.log(results);
 
   });
@@ -161,7 +161,7 @@ contract("VotingContract", (accounts) => {
 
     await contractInstance.tailVotes();
 
-    let winner = await contractInstance.getWinner();
+    let winner = await contractInstance.getWinner({ from: bob });
     assert.equal(winner.description, "test 2");
     assert.equal(winner.voteCount, 1);
 

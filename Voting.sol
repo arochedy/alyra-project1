@@ -54,8 +54,8 @@ contract Voting is Ownable{
     }
 
     //GETTERS 
-    function getCurrentStatus() isVoter external view returns (WorkflowStatus) {
-        return currentStatus;
+    function getCurrentStatus() external view returns (WorkflowStatus) { //everyone can see the current status
+        return currentStatus; 
     }
 
     function getProposal(uint256 _proposalId) external view isVoter returns (Proposal memory)
@@ -68,9 +68,14 @@ contract Voting is Ownable{
         return proposals;
     }
 
+    function isWhitelisted(address _address) isVoter public view returns (bool)
+    {
+        return voters[_address];
+    }
+
     function getVoterInfo(address _address) isVoter external view returns (Voter memory)
     {
-        require(isWhitelisted(_address), "This address is not a voter");
+        require(isWhitelisted(_address) == true, "This address is not a voter");
         return userVotes[_address];
     }
 
@@ -78,11 +83,6 @@ contract Voting is Ownable{
     {
         require(currentStatus == WorkflowStatus.VotesTallied, "Vote is not finished");
         return proposals[winningProposalId] ;
-    }
-
-    function isWhitelisted(address _address) isVoter external view returns (bool)
-    {
-        return voters[_address];
     }
 
     //END GETTERS
@@ -150,8 +150,8 @@ contract Voting is Ownable{
 
         require(proposals.length > _proposalId, "This proposal does'nt exist");
 
-        Voter memory vote =  Voter(true,true,_proposalId);
-        userVotes[msg.sender] = vote;
+        Voter memory currentVote =  Voter(true,true,_proposalId);
+        userVotes[msg.sender] = currentVote;
         proposals[_proposalId].voteCount++;
         emit Voted(msg.sender,_proposalId);
     }
@@ -163,15 +163,14 @@ contract Voting is Ownable{
     //modifiers
     modifier canVote() 
     {   
-        require(isWhitelisted(msg.sender), "You're not authorized");
+        require(voters[msg.sender] == true, "You're not authorized");
         require(currentStatus == WorkflowStatus.VotingSessionStarted, "It's not the time to vote");
         require(userVotes[msg.sender].hasVoted == false, "You already voted");
         _;
     }
 
     modifier isVoter()
-    {   
-        require(isWhitelisted(msg.sender), "You're not authorized");
+    {   require(voters[msg.sender] == true, "You're not authorized");
         _;
     }
 
