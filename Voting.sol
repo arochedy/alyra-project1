@@ -1,4 +1,4 @@
-pragma solidity 0.8.14;
+pragma solidity 0.8.17;
 
 // Voici le déroulement de l'ensemble du processus de vote :
 
@@ -12,15 +12,15 @@ pragma solidity 0.8.14;
 // L'administrateur du vote comptabilise les votes.
 // Tout le monde peut vérifier les derniers détails de la proposition gagnante.
 
+// import "@openzeppelin/contracts/access/Ownable.sol"; //for truffle test
 
-import "@openzeppelin/contracts/access/Ownable.sol";
 
-// import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol';
+import 'https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol';
 
 contract Voting is Ownable{
 
-
     uint private winningProposalId ;
+
     WorkflowStatus currentStatus = WorkflowStatus.RegisteringVoters ;
 
     event VoterRegistered(address voterAddress); 
@@ -28,11 +28,10 @@ contract Voting is Ownable{
     event ProposalRegistered(uint proposalId);
     event Voted (address voter, uint proposalId);
 
-    mapping(address => bool) private whitelistedAddresses;
+    mapping(address => bool) private voters; 
     
-    // mapping(address => uint) private userVotes;
     mapping (address => Voter) private userVotes;
-    Proposal[] public proposals;
+    Proposal[] private proposals; //can only view by voters
 
     struct Voter {
         bool isRegistered;
@@ -54,24 +53,55 @@ contract Voting is Ownable{
         VotesTallied
     }
 
-    function getCurrentStatus () public view returns (WorkflowStatus) {
+    //GETTERS 
+    function getCurrentStatus() isVoter external view returns (WorkflowStatus) {
         return currentStatus;
     }
 
-    function whitelist (address _address) onlyOwner public 
+    function getProposal(uint256 _proposalId) external view isVoter returns (Proposal memory)
+    {
+        return proposals[_proposalId];
+    }
+
+    function getProposals() external view isVoter returns (Proposal[] memory)
+    {
+        return proposals;
+    }
+
+    function getVoterInfo(address _address) isVoter external view returns (Voter memory)
+    {
+        require(isWhitelisted(_address), "This address is not a voter");
+        return userVotes[_address];
+    }
+
+    function getWinner() isVoter external view returns (Proposal memory)
+    {
+        require(currentStatus == WorkflowStatus.VotesTallied, "Vote is not finished");
+        return proposals[winningProposalId] ;
+    }
+
+    function isWhitelisted(address _address) isVoter external view returns (bool)
+    {
+        return voters[_address];
+    }
+
+    //END GETTERS
+
+    //ADMIN FUNCTIONS
+    function whitelist(address _address) onlyOwner external 
     {
         //check s'il a pas déjà eté whitelisted 
-        require(whitelistedAddresses[_address] == false, "Already registred");
+        require(voters[_address] == false, "Already registred");
         require(currentStatus == WorkflowStatus.RegisteringVoters, "Not RegisteringVoters period");
 
-        whitelistedAddresses[_address] = true;
-        //create voter for msg.sender
+        voters[_address] = true;
+  
         Voter memory currentVoter = Voter(true,false,0);
         userVotes[msg.sender] = currentVoter;
         emit VoterRegistered(_address);
     }
 
-    function updateWorkflow() onlyOwner public 
+    function updateWorkflow() onlyOwner external 
     {
         require(currentStatus < WorkflowStatus.VotesTallied);
         WorkflowStatus oldStatus = currentStatus;
@@ -80,39 +110,7 @@ contract Voting is Ownable{
         emit WorkflowStatusChange(oldStatus, nextStatus);
     }
 
-
-    function addProposal(string calldata description) public returns (uint) {
-
-        // Les électeurs inscrits sont autorisés à enregistrer leurs propositions pendant que la session d'enregistrement est active.
-
-        require(whitelistedAddresses[msg.sender] == true, "Your not allowed to addProposal");
-        require(currentStatus == WorkflowStatus.ProposalsRegistrationStarted, "biteNot ProposalsRegistrationStarted period");
-        Proposal memory prop =  Proposal(description, 0);
-        proposals.push(prop);
-        
-        emit ProposalRegistered(proposals.length-1);
-        return proposals.length-1;
-
-    }
-
-    function vote(uint _proposalId) canVote public 
-    {
-        // Les électeurs inscrits votent pour leur proposition préférée.
-
-
-        //check the _proposalId exists
-        require(proposals.length > _proposalId, "This proposal does'nt exist");
-        
-
-        Voter memory vote =  Voter(true,true,_proposalId);
-        userVotes[msg.sender] = vote;
-        //TO FINISH ? update counters
-        proposals[_proposalId].voteCount++;
-        emit Voted(msg.sender,_proposalId);
-    }
-
-
-    function tailVotes () onlyOwner public {
+    function tailVotes () onlyOwner external {
         // L'administrateur du vote comptabilise les votes.
         require(currentStatus == WorkflowStatus.VotingSessionEnded, "It's not good time to do it");
         uint maxVote = 0;
@@ -130,20 +128,40 @@ contract Voting is Ownable{
         winningProposalId = currentWinningProposalId;
         currentStatus = WorkflowStatus.VotesTallied;
     }
-    function isWhitelisted(address _address) public view returns (bool)
-    {
-        return whitelistedAddresses[_address];
+    //END ADMIN FUNCTIONS
+
+    //VOTER FUNCTIONS
+    function addProposal(string calldata _description) isVoter external returns (uint) {
+
+        // Les électeurs inscrits sont autorisés à enregistrer leurs propositions pendant que la session d'enregistrement est active.
+
+        require(currentStatus == WorkflowStatus.ProposalsRegistrationStarted, "Not the time for add proposals");
+        Proposal memory prop =  Proposal(_description, 0);
+        proposals.push(prop);
+        
+        emit ProposalRegistered(proposals.length-1);
+        return proposals.length-1;
+
     }
 
-    function getWinner() public view returns ( Proposal memory)
+    function vote(uint _proposalId) canVote external 
     {
-        require(currentStatus == WorkflowStatus.VotesTallied, "Vote is not finished");
-        //TO DO returns proposal ?
-        return proposals[winningProposalId] ;
+        // Les électeurs inscrits votent pour leur proposition préférée.
+
+        require(proposals.length > _proposalId, "This proposal does'nt exist");
+
+        Voter memory vote =  Voter(true,true,_proposalId);
+        userVotes[msg.sender] = vote;
+        proposals[_proposalId].voteCount++;
+        emit Voted(msg.sender,_proposalId);
     }
 
 
-    modifier canVote()
+  
+
+    
+    //modifiers
+    modifier canVote() 
     {   
         require(isWhitelisted(msg.sender), "You're not authorized");
         require(currentStatus == WorkflowStatus.VotingSessionStarted, "It's not the time to vote");
@@ -151,7 +169,15 @@ contract Voting is Ownable{
         _;
     }
 
+    modifier isVoter()
+    {   
+        require(isWhitelisted(msg.sender), "You're not authorized");
+        _;
+    }
 
+    //END MODIFIERS
+
+    
 
 
 }
